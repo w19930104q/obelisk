@@ -44,6 +44,7 @@ func main() {
 	cmd.Flags().Bool("no-css", false, "disable CSS styling")
 	cmd.Flags().Bool("no-embeds", false, "remove embedded elements (e.g iframe)")
 	cmd.Flags().Bool("no-medias", false, "remove media elements (e.g img, audio)")
+	cmd.Flags().Bool("strict-css", false, "resolve and embed CSS @import rules strictly (single-file only)")
 
 	cmd.Flags().IntP("retries", "r", 3, "maximum number of retries for single request")
 	cmd.Flags().IntP("timeout", "t", 60, "maximum time (in second) before request timeout")
@@ -74,6 +75,7 @@ func cmdHandler(cmd *cobra.Command, args []string) error {
 	disableCSS, _ := cmd.Flags().GetBool("no-css")
 	disableEmbeds, _ := cmd.Flags().GetBool("no-embeds")
 	disableMedias, _ := cmd.Flags().GetBool("no-medias")
+	strictCSS, _ := cmd.Flags().GetBool("strict-css")
 
 	retries, _ := cmd.Flags().GetInt("retries")
 	timeout, _ := cmd.Flags().GetInt("timeout")
@@ -154,6 +156,7 @@ func cmdHandler(cmd *cobra.Command, args []string) error {
 		DisableCSS:    disableCSS,
 		DisableEmbeds: disableEmbeds,
 		DisableMedias: disableMedias,
+		StrictCSS:     strictCSS,
 
 		Transport:             transport,
 		MaxRetries:            retries,

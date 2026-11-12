@@ -2,6 +2,7 @@ package obelisk
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	nurl "net/url"
@@ -558,6 +559,34 @@ func (arc *Archiver) processLinkNode(ctx context.Context, node *html.Node, baseU
 	}
 
 	url := dom.GetAttribute(node, "href")
+
+	// In strict CSS mode, external stylesheets are resolved through the
+	// strict resolver so their @import rules are embedded recursively.
+	if arc.strictCSSActive(ctx) {
+		media := strings.TrimSpace(dom.GetAttribute(node, "media"))
+		newCSS, err := arc.processStrictStylesheetURL(ctx, url, baseURL, nil)
+		if err != nil {
+			if errors.Is(err, errSkippedURL) {
+				return nil
+			}
+			return err
+		}
+
+		// A media query on the <link> is part of its condition and must
+		// survive the conversion to an inline <style>.
+		if media != "" && !strings.EqualFold(media, "all") {
+			newCSS = "@media " + media + " {\n" + newCSS + "\n}"
+		}
+
+		for i := len(node.Attr) - 1; i >= 0; i-- {
+			dom.RemoveAttribute(node, node.Attr[i].Key)
+		}
+		node.Data = "style"
+		dom.SetAttribute(node, "type", "text/css")
+		dom.SetTextContent(node, newCSS)
+		return nil
+	}
+
 	content, contentType, err := arc.processURL(ctx, url, baseURL.String())
 	if err != nil {
 		if err == errSkippedURL {

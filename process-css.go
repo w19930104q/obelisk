@@ -3,6 +3,7 @@ package obelisk
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"io"
 	nurl "net/url"
 	"strings"
@@ -14,6 +15,24 @@ import (
 )
 
 func (arc *Archiver) processCSS(ctx context.Context, input io.Reader, baseURL *nurl.URL) (string, error) {
+	// In strict mode we need to rewrite the CSS token by token, so we need
+	// the whole stylesheet first. This mode is deliberately opt-in because
+	// it changes how @import rules and resource errors are handled.
+	if arc.strictCSSActive(ctx) {
+		ctx, release := strictCSSCallContext(ctx)
+		defer release()
+
+		content, err := io.ReadAll(input)
+		if err != nil {
+			return "", fmt.Errorf("failed to read CSS: %w", err)
+		}
+		return arc.processCSSContent(ctx, string(content), baseURL, nil)
+	}
+
+	return arc.processCSSLegacy(ctx, input, baseURL)
+}
+
+func (arc *Archiver) processCSSLegacy(ctx context.Context, input io.Reader, baseURL *nurl.URL) (string, error) {
 	// Prepare buffer to store content from input
 	buffer := bytes.NewBuffer(nil)
 

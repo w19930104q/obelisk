@@ -20,6 +20,7 @@ Obelisk is a Go package and CLI tool for saving web page as single HTML file, wi
 - In case the submitted URL is not HTML (for example a PDF page), Obelisk will still save it as it is.
 - Downloading each assets are done concurrently, which make the archival process for a web page is quite fast.
 - Accepts cookies, useful for pages that need login or article behind paywall.
+- Optional strict CSS mode that resolves and embeds all stylesheet `@import` rules recursively (see below).
 
 ## As Go package
 
@@ -69,6 +70,7 @@ Flags:
   -o, --output string                 path to save archival result
   -q, --quiet                         disable logging
       --skip-resource-url-error       skip process resource url error
+      --strict-css                    resolve and embed CSS @import rules strictly (single-file only)
   -t, --timeout int                   maximum time (in second) before request timeout (default 60)
   -u, --user-agent string             set custom user agent
       --verbose                       more verbose logging
@@ -100,6 +102,39 @@ There are some CLI behavior that I think need to be explained more here :
 - If `--output` flag is set to `-` and there is only one URL to process (either from input file or from CLI arguments) then the default output will be `stdout`.
 - If `--output` flag is specified but there are more than one URL to process, Obelisk will generate file name for the archive, but keep using the directory from the specified output path.
 - If `--output` flag is specified but it sets to an existing directory, Obelisk will also generate file name for the archive.
+
+### Strict CSS mode
+
+By default Obelisk keeps the historical CSS handling unchanged. Pass
+`--strict-css` (or set `Archiver.StrictCSS` when using the Go package) to
+enable strict CSS processing:
+
+- `@import` rules are resolved recursively for external stylesheets
+  (`<link rel="stylesheet">`), `<style>` elements and inline `style`
+  attributes, then embedded in place. Both the string form
+  (`@import "a.css"`) and the `url(...)` form are supported, including CSS
+  escapes.
+- The optional `layer`, `supports(...)` and media conditions of an `@import`
+  are preserved, in source order, by wrapping the embedded rules in matching
+  `@layer`, `@supports` and `@media` blocks. Multiple imports keep their
+  original position and order.
+- Relative URLs in a stylesheet (imports and `url(...)` resources) are
+  resolved against the final URL of that stylesheet's GET request, after
+  following redirects. The stylesheet charset is taken from the HTTP
+  `Content-Type`, a BOM or an `@charset` rule, and decoded to UTF-8.
+- Stylesheets shared within a single `Archive` call are downloaded only once;
+  HTTP retries and redirect hops are performed as usual.
+- Comments and ordinary CSS strings are never rewritten. Only real
+  `@import` rules and `url(...)` tokens are modified.
+- Import cycles, including cycles that involve redirect aliases, fail with an
+  error that lists the dependency chain. Any download, read or parse failure
+  is returned as an error: a partial archive is never returned, failed
+  downloads are not cached, and `--skip-resource-url-error` cannot hide
+  errors raised while processing stylesheets.
+
+Strict CSS mode is only available for single-file archives. It is ignored
+when `Archiver.WrapDirectory` is set (directory mode keeps the legacy
+behavior) and when CSS is disabled with `--no-css`.
 
 ## F.A.Q
 

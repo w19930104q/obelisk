@@ -57,6 +57,15 @@ type Archiver struct {
 	DisableEmbeds bool
 	DisableMedias bool
 
+	// StrictCSS enables strict CSS processing. When enabled, all @import
+	// rules (from external stylesheets, <style> elements and inline style
+	// attributes) are resolved recursively and embedded in place. Any
+	// download, read or parse error is returned to the caller instead of
+	// silently leaving a partially archived result. This mode is only
+	// supported for single-file archives (WrapDirectory must be empty) and
+	// is disabled when DisableCSS is set.
+	StrictCSS bool
+
 	Transport             http.RoundTripper
 	RequestTimeout        time.Duration
 	MaxRetries            int
@@ -119,6 +128,14 @@ func (arc *Archiver) Archive(ctx context.Context, req Request) ([]byte, string, 
 	// Set the original url
 	req.origin = url
 	ctx = withOrigin(ctx, req.origin)
+
+	// Strict CSS resolution state is scoped to a single Archive call, so
+	// stylesheets shared by several nodes are downloaded only once without
+	// leaking state (especially failed downloads) into the next call.
+	if arc.strictCSSEnabled() {
+		ctx = withStrictCSSState(ctx, newStrictCSSState())
+	}
+
 	url = arc.finalURI(url)
 
 	// If needed download page from source URL
@@ -200,7 +217,12 @@ func (arc *Archiver) downloadFile(url string, parentURL string) (*http.Response,
 		var err error
 		resp, err = arc.httpClient.Do(req) //nolint:bodyclose,goimports
 		if err == nil && (resp.StatusCode >= http.StatusInternalServerError || resp.StatusCode == http.StatusTooManyRequests) {
-			err = fmt.Errorf("failed to fetch with status code: %d", resp.StatusCode)
+			statusCode := resp.StatusCode
+			// Close the body before retrying, otherwise failed attempts
+			// leave connections and buffers behind.
+			resp.Body.Close()
+			resp = nil
+			err = fmt.Errorf("failed to fetch with status code: %d", statusCode)
 		}
 		return err
 	}
